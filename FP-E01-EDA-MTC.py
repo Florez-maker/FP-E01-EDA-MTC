@@ -55,19 +55,22 @@ TON_HA_ALIASES = {
     "ton_ha": ["ton/ha", "tonha", "ton_ha", "rff/ha", "rff_ha",
                "rendimiento", "produccion", "producción"],
 }
+
 ANO_ALIASES = {
     "ano": ["año", "year", "anio", "campana", "campaña"],
 }
+
 CLIMA_ALIASES = {
     "pp_anual": ["pp anual", "pp_anual", "precipitacion anual",
                  "precipitacion", "precipitación anual"],
-    "temp_promedio": ["temp promedio", "temp_promedio",
+    "temp_promedio": ["temp promedio", " te mp_promedio",
                       "temperatura promedio", "temperatura_promedio"],
     "humedad_relativa_promedio": ["humedad relativa promedio", "hr promedio",
                                   "hr_prom", "humedad_relativa"],
     "brillo_solar_promedio": ["brillo solar promedio", "brillo solar",
                               "brillo_solar"],
 }
+
 FOLIAR_ALIASES = {
     "fol_n":  ["n_1", "n_f", "n_fol", "n_foliar"],
     "fol_p":  ["p_1", "p_f", "p_fol", "p_foliar"],
@@ -89,7 +92,9 @@ PROD_BASE_COLS = [
     "racimos", "n_racimos", "num_racimos", "racimos_ha",
     "peso_racimo", "peso_prom_racimo", "peso_racimos",
 ]
+
 PROD_PATRONES = ("ton_ha", "tch", "ffb", "racim", "cosecha", "rend", "rff")
+
 PROD_EXCLUI_PREFIJO = ("kg", "oferta_", "dist_opt_", "score_", "bma_", "fol_")
 
 ESTRUCTURA_COLS = ["edad", "edad2", "densidad", "area", "n_palmas",
@@ -250,7 +255,6 @@ def cargar_dataset_consolidado(file_bytes: bytes, file_name: str = "") -> pd.Dat
     df_raw.columns = [str(c).strip().lower() for c in df_raw.columns]
     df = standardize_df(df_raw)
 
-    # Alias robustos → nomenclatura canónica del ecosistema FarmPrecision
     df, tonha_det = resolve_aliases(df, TON_HA_ALIASES)
     df, ano_det   = resolve_aliases(df, ANO_ALIASES)
     df, _         = resolve_aliases(df, CLIMA_ALIASES)
@@ -267,15 +271,6 @@ def cargar_dataset_consolidado(file_bytes: bytes, file_name: str = "") -> pd.Dat
 
 
 def limpiar_panel(df: pd.DataFrame):
-    """v1.1 — Sanidad específica del panel lote×año.
-
-    * Edad > EDAD_MAX_VALIDA → año de muestreo colado como edad (p. ej.
-      registros POUSIO con 2021–2026): se trata como nulo para no romper la
-      curva de producción.
-    * Siembra < SIEMBRA_MIN (0) → inválida.
-    * Construye edad2 (término cuadrático de la curva de producción).
-    Devuelve (df, info) con los conteos para el banner de calidad.
-    """
     info = {"edad_anomala": 0, "siembra_invalida": 0, "siembra_futura": 0}
     df = df.copy()
 
@@ -309,12 +304,6 @@ def detectar_cols_produccion(df: pd.DataFrame) -> list:
 
 
 def detectar_pool_eda(df: pd.DataFrame):
-    """v1.1 — Pool completo del EDA: trío de producción + bloque estructural.
-
-    Devuelve (pool_eda, prod_cols, estructura_cols). El bloque estructural
-    (edad, edad², densidad, área, n_palmas, año, siembra) alimenta los tabs
-    descriptivos y es la base de las predictoras exógenas del RF.
-    """
     prod = detectar_cols_produccion(df)
     est = [c for c in ESTRUCTURA_COLS
            if c in df.columns and c not in prod
@@ -323,8 +312,6 @@ def detectar_pool_eda(df: pd.DataFrame):
 
 
 def preparar_features(df: pd.DataFrame):
-    """Clasifica columnas por bloque. La v1 usa PRODUCCIÓN + ESTRUCTURA, pero
-    los demás bloques quedan calculados para reactivarse en la v2 sin refactor."""
     df = df.copy()
     for col in TEXT_COLS:
         if col in df.columns:
@@ -375,7 +362,6 @@ def rango_optimo(var: str):
 
 
 def referencia_meta(var: str, meta_val: float):
-    """(meta, unidad, fuente) si a la variable le aplica la meta en ton/ha."""
     if meta_val is None:
         return None
     if any(p in var for p in ("ton_ha", "tch", "ffb", "rend", "rff")):
@@ -421,7 +407,6 @@ def matriz_pearson(df: pd.DataFrame, cols: list, min_pares: int = 15):
     R = pd.DataFrame(np.nan, index=cols, columns=cols)
     P = pd.DataFrame(np.nan, index=cols, columns=cols)
     for i, a in enumerate(cols):
-        # Diagonal fija (evita df[[a, a]] → selección duplicada → Series ambigua)
         R.loc[a, a], P.loc[a, a] = 1.0, 0.0
         for b in cols[i + 1:]:
             par = df[[a, b]].apply(pd.to_numeric, errors="coerce").dropna()
@@ -471,7 +456,6 @@ def fig_histograma_optimo(serie: pd.Series, var: str, nbins: int = 30,
         except Exception:
             pass
 
-    # Referencia gráfica: meta de producción (v1) o rango edáfico si existiera
     meta = referencia_meta(var, meta_val)
     if meta:
         mval, uni, src = meta
@@ -520,7 +504,6 @@ def fig_scatter_prod(df: pd.DataFrame, x: str, y: str = "ton_ha",
                      opacity=0.75, color_discrete_sequence=px.colors.qualitative.Set2)
     fig.update_traces(marker=dict(size=8, line=dict(width=0.6, color="white")))
 
-    # Recta OLS (solo si hay varianza en X)
     if d[x].nunique() > 1:
         try:
             b1, b0 = np.polyfit(d[x], d[y], 1)
@@ -532,7 +515,6 @@ def fig_scatter_prod(df: pd.DataFrame, x: str, y: str = "ton_ha",
         except Exception:
             pass
 
-    # Referencia: meta de producción en el eje X (si aplica)
     meta = referencia_meta(x, meta_val)
     if meta:
         fig.add_vline(x=meta[0], line_color=COLORS["success"], line_width=2,
@@ -555,20 +537,12 @@ def fig_scatter_prod(df: pd.DataFrame, x: str, y: str = "ton_ha",
 
 def entrenar_rf(df, features, target="ton_ha", n_estimators=500, max_depth=12,
                 min_samples_leaf=3, n_splits=5, umbral_leak=0.85, groups=None):
-    """v1.1 — RF consciente del panel lote×año.
-
-    Si `groups` (Serie con el lote, indexado como df) está disponible, el
-    holdout y el K-fold se agrupan por lote (GroupShuffleSplit / GroupKFold):
-    el mismo lote nunca queda repartido entre train y test, así el R² mide
-    generalización a lotes nuevos y no memoria del lote.
-    """
     d = df[[target] + list(features)].apply(pd.to_numeric, errors="coerce")
     d = d.dropna(subset=[target])
     feats_ok = [c for c in features if c in d.columns]
     X = d[feats_ok].loc[:, d[feats_ok].notna().any() & (d[feats_ok].nunique() > 1)]
     y = d[target].astype(float)
 
-    # Control de fuga de información (|r| > umbral con el target)
     leaks = []
     for c in X.columns:
         par = pd.concat([X[c], y], axis=1).dropna()
@@ -638,7 +612,7 @@ def entrenar_rf(df, features, target="ton_ha", n_estimators=500, max_depth=12,
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# 4. TABS — v1.1: producción + bloque estructural
+# 4. TABS
 # ══════════════════════════════════════════════════════════════════════════
 
 def tab_estadigrafos(df, pool):
@@ -655,6 +629,8 @@ def tab_estadigrafos(df, pool):
                        "estadigrafos.csv", "text/csv")
     st.caption("CV % = DE/X·100 · La meta de producción se ajusta con el slider "
                "superior (25 t FFB/ha por defecto).")
+
+    st.markdown("---")
 
 
 def tab_histogramas(df, pool, meta_val):
@@ -680,6 +656,8 @@ def tab_histogramas(df, pool, meta_val):
     else:
         st.caption(f"Sin meta de producción aplicable a `{var}` "
                    "(la meta se asigna a variables en ton/ha, TCH, FFB o RFF).")
+
+    st.markdown("---")
 
 
 def tab_pearson(df, pool):
@@ -713,6 +691,8 @@ def tab_pearson(df, pool):
                    "por construcción (son re-expresiones del mismo yield) — úsalas "
                    "solo en lectura descriptiva, nunca como predictoras.")
 
+    st.markdown("---")
+
 
 def tab_scatter(df, pool, meta_val):
     st.markdown('<div class="section-title">5 · Dispersión X vs Producción (ton_ha)</div>',
@@ -739,6 +719,8 @@ def tab_scatter(df, pool, meta_val):
             st.plotly_chart(fig_scatter_prod(df, x, TARGET_PROD, color, meta_val),
                             use_container_width=True,
                             key=sanitize_key(f"eda_sc_{x}_{color}"))
+
+    st.markdown("---")
 
 
 def tab_rf(df, pool):
@@ -860,6 +842,8 @@ def tab_rf(df, pool):
             f'<span style="color:{color};font-weight:700">Δ = {delta:+.2f} ton/ha</span>'
             f'</div></div>', unsafe_allow_html=True)
 
+    st.markdown("---")
+
 
 # ══════════════════════════════════════════════════════════════════════════
 # 5. SIDEBAR
@@ -903,6 +887,7 @@ def render_sidebar():
             "El sistema normaliza automáticamente mayúsculas, minúsculas, "
             "acentos, espacios y caracteres especiales."
         )
+
         st.markdown("---")
     return uploaded
 
@@ -918,7 +903,7 @@ def main():
     st.markdown("""
     <div class="main-header">
         <h1>Laboratorio Estadístico — Drivers de Productividad</h1>
-        <p>FP-E01-EDA-MTC · v1.1 panel lote×año · Producción (ton/ha, ton/lote, kg/palma) + estructura · Estadígrafos · Meta · Pearson · Dispersión · Random Forest</p>
+        <p>Estadígrafos · Meta · Pearson · Dispersión · Random Forest</p>
     </div>""", unsafe_allow_html=True)
 
     if uploaded is None:
@@ -1060,7 +1045,13 @@ def main():
     meta_val = st.slider("Meta de producción — FFB (ton/ha):",
                          10.0, 60.0, META_FFB_DEF, 0.5, key="eda_meta_ffb")
 
-    tab_names = ["📐 Estadígrafos", "📊 Histogramas", "🔗 Pearson", "✳️ Scatter vs Producción", "🌲 Random Forest"]
+    tab_names = [
+                "📐 Estadígrafos",
+                "📊 Histogramas",
+                "🔗 Pearson",
+                "✳️ Scatter vs Producción",
+                "🌲 Random Forest"
+                 ]
     tabs = st.tabs(tab_names)
 
     with tabs[0]:
